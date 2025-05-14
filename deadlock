@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Deadlock Simulator</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <style>
+    :root {
+      --primary: #0d6efd;
+      --bg: #121212;
+      --text: #f0f0f0;
+      --card: #1e1e1e;
+      --accent: #28a745;
+      --danger: #dc3545;
+      --warning: #ffc107;
+      --font: 'Segoe UI', sans-serif;
+    }
+    body {
+      background-color: var(--bg);
+      color: var(--text);
+      font-family: var(--font);
+      margin: 0;
+      padding: 0;
+    }
+    .container {
+      max-width: 800px;
+      margin: 50px auto;
+      background: var(--card);
+      padding: 30px;
+      border-radius: 12px;
+      box-shadow: 0 0 25px rgba(0, 0, 0, 0.3);
+    }
+    h1 {
+      text-align: center;
+      color: var(--primary);
+      margin-bottom: 20px;
+    }
+    label {
+      display: block;
+      margin-top: 15px;
+      font-weight: bold;
+    }
+    textarea {
+      width: 100%;
+      padding: 12px;
+      font-size: 15px;
+      background: #2c2c2c;
+      color: var(--text);
+      border: 1px solid #444;
+      border-radius: 6px;
+      resize: vertical;
+      margin-top: 5px;
+    }
+    button {
+      margin-top: 20px;
+      padding: 12px;
+      font-size: 16px;
+      color: white;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: background 0.3s;
+    }
+    #detect-btn {
+      background: var(--primary);
+      width: 32%;
+    }
+    #banker-btn {
+      background: var(--accent);
+      width: 32%;
+    }
+    #waitfor-btn {
+      background: var(--warning);
+      width: 32%;
+    }
+    button:hover {
+      opacity: 0.9;
+    }
+    #output {
+      background: #212529;
+      padding: 15px;
+      margin-top: 25px;
+      border-left: 4px solid var(--primary);
+      font-size: 16px;
+      white-space: pre-wrap;
+      border-radius: 6px;
+    }
+    .btn-group {
+      display: flex;
+      gap: 2%;
+    }
+    @media (max-width: 600px) {
+      .btn-group {
+        flex-direction: column;
+      }
+      button {
+        width: 100%;
+        margin-bottom: 10px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🚦 Deadlock Simulator</h1>
+
+    <label>Processes (e.g., 0,1,2):</label>
+    <textarea id="processes">0,1,2</textarea>
+
+    <label>Allocation Matrix (e.g., 0 1; 1 0; 2 0):</label>
+    <textarea id="allocations">0 1; 1 0; 2 0</textarea>
+
+    <label>Request Matrix (e.g., 7 4; 1 2; 6 0):</label>
+    <textarea id="requests">7 4; 1 2; 6 0</textarea>
+
+    <label>Available Resources (e.g., 3 3):</label>
+    <textarea id="available">3 3</textarea>
+
+    <label>Max Demand Matrix (e.g., 7 5; 3 2; 9 0):</label>
+    <textarea id="max">7 5; 3 2; 9 0</textarea>
+
+    <div class="btn-group">
+      <button id="detect-btn" onclick="detectDeadlock()"> Detect Deadlock</button>
+      <button id="banker-btn" onclick="runBanker()"> Banker's Algorithm</button>
+      <button id="waitfor-btn" onclick="detectWaitFor()"> Wait-for Graph</button>
+    </div>
+
+    <div id="output">Output will appear here...</div>
+  </div>
+
+  <script>
+    function parseMatrix(input) {
+      return input.trim().split(";").map(row => row.trim().split(/\s+/).map(Number));
+    }
+
+    function parseList(input) {
+      return input.trim().split(",").map(Number);
+    }
+
+    function detectDeadlock() {
+      try {
+        const alloc = parseMatrix(document.getElementById('allocations').value);
+        const req = parseMatrix(document.getElementById('requests').value);
+        const avail = document.getElementById('available').value.trim().split(/\s+/).map(Number);
+        
+        if (alloc.length !== req.length) {
+          throw new Error("Allocation and Request matrices must have the same number of processes");
+        }
+        
+        const n = alloc.length;
+        const m = avail.length;
+        const work = [...avail];
+        const finish = Array(n).fill(false);
+        
+        let changed = true;
+        while (changed) {
+          changed = false;
+          for (let i = 0; i < n; i++) {
+            if (!finish[i] && req[i].every((r, j) => r <= work[j])) {
+              for (let j = 0; j < m; j++) work[j] += alloc[i][j];
+              finish[i] = true;
+              changed = true;
+            }
+          }
+        }
+        
+        const deadlocked = finish.some(done => !done);
+        document.getElementById("output").innerText = deadlocked
+          ? " Deadlock Detected! (Processes: " + 
+            finish.map((f, i) => f ? "" : i).filter(x => x !== "").join(", ") + ")"
+          : " No Deadlock Detected.";
+      } catch (e) {
+        document.getElementById("output").innerText = " Error: " + e.message;
+      }
+    }
+
+    function runBanker() {
+      try {
+        const available = document.getElementById('available').value.trim().split(/\s+/).map(Number);
+        const max = parseMatrix(document.getElementById('max').value);
+        const alloc = parseMatrix(document.getElementById('allocations').value);
+        
+        if (max.length !== alloc.length) {
+          throw new Error("Max and Allocation matrices must have the same number of processes");
+        }
+        
+        const n = max.length;
+        const m = available.length;
+        const need = Array.from({ length: n }, (_, i) => max[i].map((x, j) => x - alloc[i][j]));
+        const work = [...available];
+        const finish = Array(n).fill(false);
+        const safeSeq = [];
+        
+        let changed = true;
+        while (changed) {
+          changed = false;
+          for (let i = 0; i < n; i++) {
+            if (!finish[i] && need[i].every((v, j) => v <= work[j])) {
+              for (let j = 0; j < m; j++) work[j] += alloc[i][j];
+              finish[i] = true;
+              safeSeq.push(i);
+              changed = true;
+            }
+          }
+        }
+        
+        if (safeSeq.length === n) {
+          document.getElementById('output').innerText = 
+            " Safe State!\n\nSafe Sequence:\n→ " + safeSeq.join(" → ") +
+            "\n\nNeed Matrix:\n" + need.map(row => row.join(" ")).join("\n");
+        } else {
+          document.getElementById('output').innerText = 
+            "Unsafe State! Deadlock Possible.\n\nProcesses that couldn't complete: " +
+            finish.map((f, i) => f ? "" : i).filter(x => x !== "").join(", ") +
+            "\n\nNeed Matrix:\n" + need.map(row => row.join(" ")).join("\n");
+        }
+      } catch (e) {
+        document.getElementById('output').innerText = " Error: " + e.message;
+      }
+    }
+
+    function detectWaitFor() {
+      try {
+        const alloc = parseMatrix(document.getElementById('allocations').value);
+        const req = parseMatrix(document.getElementById('requests').value);
+        const processes = parseList(document.getElementById('processes').value);
+        
+        if (alloc.length !== req.length) {
+          throw new Error("Allocation and Request matrices must have the same number of processes");
+        }
+        
+        // Build wait-for graph (adjacency list)
+        const graph = {};
+        processes.forEach(p => graph[p] = []);
+        
+        for (let i = 0; i < alloc.length; i++) {
+          for (let j = 0; j < alloc.length; j++) {
+            if (i === j) continue;
+            if (req[i].some((val, k) => val > 0 && alloc[j][k] > 0)) {
+              graph[processes[i]].push(processes[j]);
+            }
+          }
+        }
+        
+        const visited = new Set();
+        const recStack = new Set();
+        let cycle = null;
+        
+        function hasCycle(node, path) {
+          if (recStack.has(node)) {
+            cycle = [...path.slice(path.indexOf(node)), node];
+            return true;
+          }
+          if (visited.has(node)) return false;
+          
+          visited.add(node);
+          recStack.add(node);
+          path.push(node);
+          
+          for (const neighbor of graph[node]) {
+            if (hasCycle(neighbor, path)) return true;
+          }
+          
+          recStack.delete(node);
+          path.pop();
+          return false;
+        }
+        
+        let deadlockFound = false;
+        const deadlockedProcesses = new Set();
+        
+        for (const node of processes) {
+          if (!visited.has(node) && hasCycle(node, [])) {
+            deadlockFound = true;
+            cycle.forEach(p => deadlockedProcesses.add(p));
+          }
+        }
+        
+        if (deadlockFound) {
+          document.getElementById('output').innerText = 
+            ` Deadlock Detected in Wait-for Graph!\n\n` +
+            `Cycle Found: ${Array.from(deadlockedProcesses).join(" → ")}\n\n` +
+            `Wait-for Graph:\n${JSON.stringify(graph, null, 2)}`;
+        } else {
+          document.getElementById('output').innerText = 
+            ` No Deadlock in Wait-for Graph\n\n` +
+            `Wait-for Graph:\n${JSON.stringify(graph, null, 2)}`;
+        }
+      } catch (e) {
+        document.getElementById('output').innerText = " Error: " + e.message;
+      }
+    }
+  </script>
+</body>
+</html>
