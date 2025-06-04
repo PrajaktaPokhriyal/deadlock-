@@ -1,3 +1,4 @@
+<!-- Deadlock Detection and Prevention Simulator (with Prevention Tips) -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -89,6 +90,18 @@
       display: flex;
       gap: 2%;
     }
+    .solution {
+      background: #2d3748;
+      padding: 10px;
+      margin-top: 15px;
+      border-left: 4px solid var(--accent);
+      border-radius: 4px;
+    }
+    .solution-title {
+      font-weight: bold;
+      color: var(--accent);
+      margin-bottom: 5px;
+    }
     @media (max-width: 600px) {
       .btn-group {
         flex-direction: column;
@@ -102,7 +115,7 @@
 </head>
 <body>
   <div class="container">
-    <h1>🚦 Deadlock Simulator</h1>
+    <h1>🚦 Deadlock Detection & Prevention Simulator</h1>
 
     <label>Processes (e.g., 0,1,2):</label>
     <textarea id="processes">0,1,2</textarea>
@@ -128,13 +141,25 @@
     <div id="output">Output will appear here...</div>
   </div>
 
+  <!-- ...existing code up to <script>... -->
   <script>
     function parseMatrix(input) {
       return input.trim().split(";").map(row => row.trim().split(/\s+/).map(Number));
     }
 
     function parseList(input) {
-      return input.trim().split(",").map(Number);
+      return input.trim().split(",").map(x => x.trim()).filter(x => x !== "").map(Number);
+    }
+
+    function addSolution(title, content) {
+      const output = document.getElementById("output");
+      const solutionDiv = document.createElement("div");
+      solutionDiv.className = "solution";
+      solutionDiv.innerHTML = `
+        <div class="solution-title">${title}</div>
+        <div>${content}</div>
+      `;
+      output.appendChild(solutionDiv);
     }
 
     function detectDeadlock() {
@@ -142,16 +167,16 @@
         const alloc = parseMatrix(document.getElementById('allocations').value);
         const req = parseMatrix(document.getElementById('requests').value);
         const avail = document.getElementById('available').value.trim().split(/\s+/).map(Number);
-        
+
         if (alloc.length !== req.length) {
           throw new Error("Allocation and Request matrices must have the same number of processes");
         }
-        
+
         const n = alloc.length;
         const m = avail.length;
         const work = [...avail];
         const finish = Array(n).fill(false);
-        
+
         let changed = true;
         while (changed) {
           changed = false;
@@ -163,14 +188,24 @@
             }
           }
         }
-        
+
         const deadlocked = finish.some(done => !done);
-        document.getElementById("output").innerText = deadlocked
-          ? " Deadlock Detected! (Processes: " + 
+        const output = document.getElementById("output");
+        output.innerHTML = deadlocked
+          ? "Deadlock Detected! (Processes: " +
             finish.map((f, i) => f ? "" : i).filter(x => x !== "").join(", ") + ")"
-          : " No Deadlock Detected.";
+          : "No Deadlock Detected.";
+
+        if (deadlocked) {
+          addSolution("💡 Prevention Tips", `
+            1. Terminate one or more deadlocked processes.<br>
+            2. Add more resources to the system.<br>
+            3. Rollback processes to a safe state.<br>
+            4. Use resource ordering or timeouts to avoid future deadlocks.
+          `);
+        }
       } catch (e) {
-        document.getElementById("output").innerText = " Error: " + e.message;
+        document.getElementById("output").innerText = "Error: " + e.message;
       }
     }
 
@@ -179,18 +214,18 @@
         const available = document.getElementById('available').value.trim().split(/\s+/).map(Number);
         const max = parseMatrix(document.getElementById('max').value);
         const alloc = parseMatrix(document.getElementById('allocations').value);
-        
+
         if (max.length !== alloc.length) {
           throw new Error("Max and Allocation matrices must have the same number of processes");
         }
-        
+
         const n = max.length;
         const m = available.length;
         const need = Array.from({ length: n }, (_, i) => max[i].map((x, j) => x - alloc[i][j]));
         const work = [...available];
         const finish = Array(n).fill(false);
         const safeSeq = [];
-        
+
         let changed = true;
         while (changed) {
           changed = false;
@@ -203,93 +238,131 @@
             }
           }
         }
-        
+
+        const output = document.getElementById('output');
+        output.innerHTML = "";
+
         if (safeSeq.length === n) {
-          document.getElementById('output').innerText = 
-            " Safe State!\n\nSafe Sequence:\n→ " + safeSeq.join(" → ") +
-            "\n\nNeed Matrix:\n" + need.map(row => row.join(" ")).join("\n");
+          output.innerHTML =
+            "Safe State! No Deadlock Detected.\n\nSafe Sequence:\n→ " + safeSeq.join(" → ");
         } else {
-          document.getElementById('output').innerText = 
+          output.innerHTML =
             "Unsafe State! Deadlock Possible.\n\nProcesses that couldn't complete: " +
             finish.map((f, i) => f ? "" : i).filter(x => x !== "").join(", ") +
             "\n\nNeed Matrix:\n" + need.map(row => row.join(" ")).join("\n");
+          addSolution("💡 Prevention Tips", `
+            1. Add more resources to the system.<br>
+            2. Reduce resource requests of blocked processes.<br>
+            3. Implement resource quotas or priorities.<br>
+            4. Use Banker's algorithm for all allocations.
+          `);
         }
       } catch (e) {
-        document.getElementById('output').innerText = " Error: " + e.message;
+        document.getElementById('output').innerText = "Error: " + e.message;
       }
     }
 
+    // Improved Wait-for Graph: Only add edge if process i cannot proceed with current available resources
     function detectWaitFor() {
       try {
         const alloc = parseMatrix(document.getElementById('allocations').value);
         const req = parseMatrix(document.getElementById('requests').value);
+        const avail = document.getElementById('available').value.trim().split(/\s+/).map(Number);
         const processes = parseList(document.getElementById('processes').value);
-        
-        if (alloc.length !== req.length) {
-          throw new Error("Allocation and Request matrices must have the same number of processes");
+
+        if (alloc.length !== req.length || alloc.length !== processes.length) {
+          throw new Error("Allocation, Request matrices and Processes must have the same number of processes");
         }
-        
-        // Build wait-for graph (adjacency list)
+
+        const n = alloc.length;
+        const m = avail.length;
+        // Calculate which processes are currently blocked (cannot proceed with available)
+        const blocked = [];
+        for (let i = 0; i < n; i++) {
+          let canProceed = true;
+          for (let j = 0; j < m; j++) {
+            if (req[i][j] > avail[j]) {
+              canProceed = false;
+              break;
+            }
+          }
+          if (!canProceed) blocked.push(i);
+        }
+
+        // Build wait-for graph only for blocked processes
         const graph = {};
         processes.forEach(p => graph[p] = []);
-        
-        for (let i = 0; i < alloc.length; i++) {
-          for (let j = 0; j < alloc.length; j++) {
+        for (let i of blocked) {
+          for (let j = 0; j < n; j++) {
             if (i === j) continue;
-            if (req[i].some((val, k) => val > 0 && alloc[j][k] > 0)) {
-              graph[processes[i]].push(processes[j]);
+            for (let k = 0; k < m; k++) {
+              if (req[i][k] > 0 && alloc[j][k] > 0) {
+                graph[processes[i]].push(processes[j]);
+                break;
+              }
             }
           }
         }
-        
+
+        // Detect cycle in wait-for graph
         const visited = new Set();
         const recStack = new Set();
         let cycle = null;
-        
+
         function hasCycle(node, path) {
           if (recStack.has(node)) {
             cycle = [...path.slice(path.indexOf(node)), node];
             return true;
           }
           if (visited.has(node)) return false;
-          
+
           visited.add(node);
           recStack.add(node);
           path.push(node);
-          
+
           for (const neighbor of graph[node]) {
             if (hasCycle(neighbor, path)) return true;
           }
-          
+
           recStack.delete(node);
           path.pop();
           return false;
         }
-        
+
         let deadlockFound = false;
         const deadlockedProcesses = new Set();
-        
+
         for (const node of processes) {
           if (!visited.has(node) && hasCycle(node, [])) {
             deadlockFound = true;
             cycle.forEach(p => deadlockedProcesses.add(p));
           }
         }
-        
+
+        const output = document.getElementById('output');
+        output.innerHTML = "";
+
         if (deadlockFound) {
-          document.getElementById('output').innerText = 
-            ` Deadlock Detected in Wait-for Graph!\n\n` +
+          output.innerHTML =
+            `Deadlock Detected in Wait-for Graph!\n\n` +
             `Cycle Found: ${Array.from(deadlockedProcesses).join(" → ")}\n\n` +
             `Wait-for Graph:\n${JSON.stringify(graph, null, 2)}`;
+          addSolution("💡 Prevention Tips", `
+            1. Terminate or rollback one process in the cycle.<br>
+            2. Use resource ordering to avoid cycles.<br>
+            3. Add timeouts for resource requests.<br>
+            4. Monitor wait-for graph regularly.
+          `);
         } else {
-          document.getElementById('output').innerText = 
-            ` No Deadlock in Wait-for Graph\n\n` +
+          output.innerHTML =
+            `No Deadlock in Wait-for Graph\n\n` +
             `Wait-for Graph:\n${JSON.stringify(graph, null, 2)}`;
         }
       } catch (e) {
-        document.getElementById('output').innerText = " Error: " + e.message;
+        document.getElementById('output').innerText = "Error: " + e.message;
       }
     }
   </script>
+
 </body>
 </html>
